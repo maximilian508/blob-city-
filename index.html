@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Blob City</title>
+<style>
+body { margin: 0; overflow: hidden; font-family: sans-serif; }
+#ui {
+position: absolute; top: 10px; left: 10px;
+color: white; font-size: 22px; z-index: 3;
+}
+#shopBtn {
+position: absolute; top: 10px; right: 10px;
+padding: 10px 20px; background: #444;
+color: white; border-radius: 10px; z-index: 3;
+font-size: 20px;
+}
+#sellBtn {
+position: absolute; bottom: 20px; left: 50%;
+transform: translateX(-50%);
+padding: 10px 30px; background: #ff8800;
+color: black; border-radius: 10px;
+font-size: 25px; z-index: 3;
+}
+#shop {
+position: absolute; top: 50%; left: 50%;
+transform: translate(-50%, -50%);
+width: 300px; padding: 20px;
+background: rgba(0,0,0,0.8); color: white;
+border-radius: 20px; display: none; z-index: 4;
+text-align: center;
+}
+#touch {
+position: absolute; bottom: 40px; left: 40px;
+width: 120px; height: 120px;
+background: rgba(255,255,255,0.1);
+border-radius: 50%; z-index: 5;
+touch-action: none;
+}
+</style>
+</head>
+<body>
+
+<div id="ui">Storlek: 1<br>Blobs: 0</div>
+<div id="shopBtn">Shop</div>
+<div id="sellBtn">Sälj</div>
+
+<div id="shop">
+<h2>Shop</h2>
+<p>Skin kostar 200 blobs</p>
+<button id="buySkin">Köp Skin</button><br><br>
+<button id="closeShop">Stäng</button>
+</div>
+
+<div id="touch"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ---------- SCENE ----------
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x222233);
+
+const camera = new THREE.PerspectiveCamera(
+75, window.innerWidth/window.innerHeight, 0.1, 1000
+);
+
+const renderer = new THREE.WebGLRenderer();
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// ---------- LIGHT ----------
+const light = new THREE.DirectionalLight(0xffffff, 1);
+light.position.set(5,20,5);
+scene.add(light);
+
+// ---------- PLAYER BLOB ----------
+let blobSize = 1;
+let blobMoney = 0;
+
+const blobGeo = new THREE.SphereGeometry(1,32,32);
+let blobMat = new THREE.MeshStandardMaterial({ color: 0xff4444 });
+const blob = new THREE.Mesh(blobGeo, blobMat);
+blob.position.y = 1;
+scene.add(blob);
+
+// ---------- FLOOR ----------
+const floorGeo = new THREE.PlaneGeometry(300, 300);
+const floorMat = new THREE.MeshStandardMaterial({ color: 0x444444 });
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI/2;
+scene.add(floor);
+
+// ---------- ITEMS ----------
+let items = [];
+function spawnItem() {
+const geo = new THREE.BoxGeometry(1,1,1);
+const mat = new THREE.MeshStandardMaterial({ color: 0xffff00 });
+const item = new THREE.Mesh(geo, mat);
+item.position.set(Math.random()*200-100, 0.5, Math.random()*200-100);
+scene.add(item);
+items.push(item);
+}
+for (let i=0; i<40; i++) spawnItem();
+
+// ---------- MONSTER ----------
+let monsters = [];
+function spawnMonster() {
+const geo = new THREE.SphereGeometry(1.2,16,16);
+const mat = new THREE.MeshStandardMaterial({ color: 0x00ff88 });
+const m = new THREE.Mesh(geo, mat);
+m.position.set(Math.random()*200-100, 1.2, Math.random()*200-100);
+m.cooldown = 0;
+scene.add(m);
+monsters.push(m);
+}
+for (let i=0; i<6; i++) spawnMonster();
+
+// ---------- MONSTER PROJECTILES ----------
+let acidBalls = [];
+
+// ---------- TOUCH CONTROL ----------
+let touch = document.getElementById("touch");
+let moveX = 0, moveY = 0;
+
+touch.addEventListener("touchmove", e=>{
+let r = touch.getBoundingClientRect();
+let x = e.touches[0].clientX - (r.left + 60);
+let y = e.touches[0].clientY - (r.top + 60);
+moveX = x/60;
+moveY = y/60;
+});
+touch.addEventListener("touchend", ()=>{
+moveX = moveY = 0;
+});
+
+// ---------- GAME LOOP ----------
+camera.position.set(0,50,50);
+camera.lookAt(blob.position);
+
+function loop(){
+requestAnimationFrame(loop);
+
+// Move blob
+blob.position.x += moveX * 0.5;
+blob.position.z += moveY * 0.5;
+
+// Eat items
+items = items.filter(it=>{
+if (blob.position.distanceTo(it.position) < blobSize + 1){
+blobSize += 0.05;
+blob.scale.set(blobSize,blobSize,blobSize);
+scene.remove(it);
+return false;
+}
+return true;
+});
+
+// Monsters shoot
+monsters.forEach(m=>{
+if (m.cooldown <= 0){
+if (blob.position.distanceTo(m.position) < 40){
+let g = new THREE.SphereGeometry(0.4,8,8);
+let a = new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:0x00ff00}));
+a.position.copy(m.position);
+a.dir = blob.position.clone().sub(m.position).normalize();
+acidBalls.push(a);
+scene.add(a);
+m.cooldown = 100;
+}
+} else m.cooldown--;
+});
+
+// Acid move + hit check
+acidBalls = acidBalls.filter(a=>{
+a.position.add(a.dir.clone().multiplyScalar(1));
+if (blob.position.distanceTo(a.position) < blobSize){
+blobSize *= 0.6; // shrink
+blob.scale.set(blobSize,blobSize,blobSize);
+scene.remove(a);
+return false;
+}
+return true;
+});
+
+renderer.render(scene,camera);
+}
+loop();
+
+// ---------- UI ----------
+function updateUI(){
+document.getElementById("ui").innerHTML =
+`Storlek: ${blobSize.toFixed(1)}<br>Blobs: ${blobMoney}`;
+}
+setInterval(updateUI,200);
+
+// SELL
+document.getElementById("sellBtn").onclick = ()=>{
+let gained = Math.floor(blobSize / 1000);
+if (gained > 0){
+blobMoney += gained;
+blobSize = 1;
+blob.scale.set(1,1,1);
+}
+};
+
+// SHOP
+document.getElementById("shopBtn").onclick=()=>{
+document.getElementById("shop").style.display="block";
+};
+document.getElementById("closeShop").onclick=()=>{
+document.getElementById("shop").style.display="none";
+};
+document.getElementById("buySkin").onclick=()=>{
+if (blobMoney >= 200){
+blobMoney -= 200;
+blob.material.color.set(0x44ccff); // blå skin
+}
+};
+</script>
+</body>
+</html>
